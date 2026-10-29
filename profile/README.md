@@ -1,7 +1,7 @@
 <div align="center">
 
 <a href="https://bimo.tools">
-  <img src="assets/bimo-wordmark.svg" alt="BIMO" width="240">
+  <img src="assets/bimo-wordmark.svg" alt="BIMO" width="100%">
 </a>
 
 ### Build smarter Revit workflows.
