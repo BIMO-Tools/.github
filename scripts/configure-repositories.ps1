@@ -3,9 +3,10 @@
 .SYNOPSIS
     Configure public GitHub repository About fields for the BIMO-Tools organization.
 .DESCRIPTION
-    Applies descriptions, homepages and topics. Preview is the default.
-    Does not alter visibility, branches, repository contents or pinned repositories.
-    Requires GitHub CLI (gh) authenticated as an organization owner/repository admin.
+    Sets descriptions, homepages and adds relevant topics using GitHub CLI.
+    Default mode previews changes; -Apply writes them.
+    Does not modify repository visibility, branches, contents, or pinned repositories.
+    Requires GitHub CLI (gh) authenticated as a user with repository administration rights.
 .EXAMPLE
     .\scripts\configure-repositories.ps1
 .EXAMPLE
@@ -32,7 +33,7 @@ $repositories = @(
     @{
         Name = 'RegEx'
         Description = 'Regular expression nodes for Dynamo and Autodesk Revit.'
-        # Keep the existing GitHub Pages URL; do not overwrite it.
+        # Preserve the existing GitHub Pages URL.
         Homepage = $null
         Topics = @('dynamo', 'dynamo-revit', 'revit', 'regex', 'regular-expressions', 'text-processing', 'csharp')
     }
@@ -43,7 +44,9 @@ if ($Apply) {
         throw 'GitHub CLI (gh) is required. Install it from https://cli.github.com/.'
     }
 
-    & gh auth status --hostname github.com 2>&1 | Out-Null
+    # Do not merge native stderr into the PowerShell pipeline: in Windows PowerShell 5.1,
+    # gh auth status writes informational output to stderr, which can become a terminating error.
+    & gh auth status --hostname github.com
     if ($LASTEXITCODE -ne 0) {
         throw 'Authenticate GitHub CLI first using: gh auth login'
     }
@@ -51,31 +54,29 @@ if ($Apply) {
 
 foreach ($repo in $repositories) {
     $fullName = "BIMO-Tools/$($repo.Name)"
+    Write-Host ""
     Write-Host "$fullName" -ForegroundColor Cyan
     Write-Host "  Description: $($repo.Description)"
     if ($repo.Homepage) { Write-Host "  Website:     $($repo.Homepage)" }
     else { Write-Host '  Website:     unchanged' }
-    Write-Host "  Topics:      $($repo.Topics -join ', ')"
+    Write-Host "  Add topics:  $($repo.Topics -join ', ')"
 
     if (-not $Apply) { continue }
 
-    $patchArgs = @('--method', 'PATCH', "repos/$fullName", '--field', "description=$($repo.Description)", '--silent')
-    if ($repo.Homepage) { $patchArgs += @('--field', "homepage=$($repo.Homepage)") }
+    # gh repo edit is PowerShell-friendly: one operation with no piped JSON/UTF-8 stdin.
+    # --add-topic preserves existing topics and makes repeat runs safe.
+    $editArgs = @('repo', 'edit', $fullName, '--description', $repo.Description,
+                  '--add-topic', ($repo.Topics -join ','))
+    if ($repo.Homepage) { $editArgs += @('--homepage', $repo.Homepage) }
 
-    & gh api @patchArgs
+    & gh @editArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to update About metadata for $fullName."
+        throw "Repository update failed for $fullName (exit code $LASTEXITCODE). See the GitHub CLI error above."
     }
-
-    $topicsJson = @{ names = @($repo.Topics) } | ConvertTo-Json -Depth 3 -Compress
-    $topicsJson | & gh api --method PUT "repos/$fullName/topics" --header 'Accept: application/vnd.github+json' --input - --silent
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to update topics for $fullName."
-    }
-    Write-Host '  Updated.' -ForegroundColor Green
+    Write-Host '  Updated successfully.' -ForegroundColor Green
 }
 
 if (-not $Apply) {
     Write-Host ''
-    Write-Host 'Preview only. Run the script with -Apply to update GitHub repository settings.'
+    Write-Host 'Preview only. Run with -Apply to update GitHub repository settings.'
 }
